@@ -10,7 +10,7 @@ app = Flask(__name__)
 
 def add(a: int, b: int) -> int:
     """Сложение двух целых чисел."""
-    return a - b
+    return a + b
 
 
 @app.get("/health")
