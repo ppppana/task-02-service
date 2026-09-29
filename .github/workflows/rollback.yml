@@ -1,0 +1,94 @@
+name: Rollback
+
+# Ручной откат на готовый образ из GHCR. Тестов и сборки нет —
+# разворачивается уже опубликованный образ по digest.
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'Образ по digest (пусто = сохранённый previous-image на сервере)'
+        required: false
+        default: ''
+
+env:
+  APP_URL: https://app.yohan-stock.duckdns.org
+
+jobs:
+  rollback:
+    name: Откат без сборки
+    runs-on: ubuntu-24.04
+    # Та же группа, что у доставки в ci.yml
+    concurrency:
+      group: task02-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Настройка SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Определение целевого образа
+        id: target
+        env:
+          INPUT_IMAGE: ${{ inputs.image }}
+          SSH_TARGET: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+        run: |
+          if [ -n "${INPUT_IMAGE}" ]; then
+            TARGET="${INPUT_IMAGE}"
+          else
+            TARGET="$(ssh "${SSH_TARGET}" cat /opt/task-02/state/previous-image)"
+          fi
+          case "${TARGET}" in
+            *@sha256:*) ;;
+            *) echo "Нет корректного образа по digest: '${TARGET}'"; exit 1 ;;
+          esac
+          CURRENT="$(ssh "${SSH_TARGET}" cat /opt/task-02/state/current-image)"
+          if [ "${TARGET}" = "${CURRENT}" ]; then
+            echo "Этот образ уже работает: ${TARGET}"; exit 1
+          fi
+          VERSION="$(ssh "${SSH_TARGET}" bash -s -- "${TARGET}" <<'EOF'
+          set -e
+          docker pull -q "$1" >/dev/null
+          docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$1"
+          EOF
+          )"
+          if [ -z "${VERSION}" ]; then
+            echo "У образа нет метки версии"; exit 1
+          fi
+          echo "Сейчас работает: ${CURRENT}"
+          echo "Откат на:        ${TARGET} (версия ${VERSION})"
+          echo "image=${TARGET}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Развёртывание готового образа
+        env:
+          IMAGE: ${{ steps.target.outputs.image }}
+          VERSION: ${{ steps.target.outputs.version }}
+          SSH_TARGET: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+        run: |
+          ssh "${SSH_TARGET}" "bash /opt/task-02/app/deploy.sh '${IMAGE}' '${VERSION}'"
+
+      - name: Проверка после отката
+        env:
+          IMAGE: ${{ steps.target.outputs.image }}
+          VERSION: ${{ steps.target.outputs.version }}
+          SSH_TARGET: ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}
+        run: |
+          curl -fsS --retry 5 --retry-delay 3 --retry-all-errors "${APP_URL}/health"
+          echo
+          GOT="$(curl -fsS "${APP_URL}/version" | jq -r .version)"
+          echo "version: ${GOT}"
+          test "${GOT}" = "${VERSION}" || { echo "Ожидалась версия ${VERSION}"; exit 1; }
+          SUM="$(curl -fsS "${APP_URL}/add?a=2&b=3" | jq .result)"
+          echo "2 + 3 = ${SUM}"
+          test "${SUM}" = "5"
+          RUNNING="$(ssh "${SSH_TARGET}" cat /opt/task-02/state/current-image)"
+          echo "На сервере: ${RUNNING}"
+          test "${RUNNING}" = "${IMAGE}" || { echo "Digest не совпадает"; exit 1; }
+
+      - name: Сводка отката
+        run: |
+          echo "rollback version: ${{ steps.target.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "rollback image:   ${{ steps.target.outputs.image }}" >> "$GITHUB_STEP_SUMMARY"
