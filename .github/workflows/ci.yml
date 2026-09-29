@@ -5,13 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
-concurrency:
-  group: deploy-${{ github.ref }}
-  cancel-in-progress: false
-
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  APP_URL: https://app.yohan-stock.duckdns.org
 
 jobs:
   test:
@@ -39,6 +36,7 @@ jobs:
       packages: write
     outputs:
       digest: ${{ steps.push.outputs.digest }}
+      version: ${{ steps.ver.outputs.value }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,6 +64,10 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.ver.outputs.value }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.ver.outputs.value }}
 
       - name: Сводка выпуска
         run: |
@@ -77,6 +79,10 @@ jobs:
     name: Доставка на VPS
     needs: build
     runs-on: ubuntu-24.04
+    # Общая группа с rollback.yml: доставка и откат никогда не идут одновременно
+    concurrency:
+      group: task02-deploy
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -87,18 +93,33 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
+      - name: Копирование файлов доставки
+        run: |
+          scp compose.yaml scripts/deploy.sh \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/task-02/app/"
+
       - name: Развёртывание по digest
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            "cd /opt/task-02/app && ./deploy.sh '${IMAGE}'"
+            "bash /opt/task-02/app/deploy.sh '${IMAGE}' '${VERSION}'"
 
-      - name: Проверка после доставки
+      - name: Проверка через HTTPS
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          sleep 5
-          curl -fsS https://app.yohan-stock.duckdns.org/health
+          curl -fsS --retry 5 --retry-delay 3 --retry-all-errors "${APP_URL}/health"
           echo
-          curl -fsS https://app.yohan-stock.duckdns.org/version
-          echo
-          curl -fsS "https://app.yohan-stock.duckdns.org/add?a=2&b=3"
+          GOT="$(curl -fsS "${APP_URL}/version" | jq -r .version)"
+          echo "version: ${GOT}"
+          test "${GOT}" = "${VERSION}" || { echo "Ожидалась версия ${VERSION}"; exit 1; }
+          SUM="$(curl -fsS "${APP_URL}/add?a=2&b=3" | jq .result)"
+          echo "2 + 3 = ${SUM}"
+          test "${SUM}" = "5"
+
+      - name: Сводка доставки
+        run: |
+          echo "deployed version: ${{ needs.build.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "deployed digest:  ${{ needs.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,19 @@
+name: task-02
+
+# Образ задаётся только через scripts/deploy.sh (пишет .env с APP_IMAGE по digest).
+# Сеть proxy создаётся один раз вручную: docker network create proxy
+# и общая с Caddy задания 01, который публикует сервис по HTTPS.
+
+services:
+  app:
+    image: ${APP_IMAGE:?APP_IMAGE is not set, run scripts/deploy.sh}
+    container_name: task02-app
+    restart: unless-stopped
+    expose:
+      - "8000"
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
