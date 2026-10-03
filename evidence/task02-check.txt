@@ -1,0 +1,31 @@
+Проверка задания 02: https://app.yohan-stock.duckdns.org
+Время: 2026-10-03 21:26:54 MSK
+
+1. Контейнер и образ
+task02-app  Up 4 days
+  работает:       ghcr.io/ppppana/task-02-service@sha256:97a365193edf33e1b35e88c25e97b3132200112ff3add076b3a1a0145ed7d966
+  current-image:  ghcr.io/ppppana/task-02-service@sha256:97a365193edf33e1b35e88c25e97b3132200112ff3add076b3a1a0145ed7d966
+  previous-image: ghcr.io/ppppana/task-02-service@sha256:0c3a7f54cde2d3e8ee8f14bd6ed918a5f15ebe381ab0a9144f7acb82ec8ca5f8
+  commit образа:  00b92b4f82099bd02bbbb64a2d3d387ac6ee4c04
+  [ OK ] Работает сохранённый выпуск (digest совпадает)
+  [ OK ] Точка отката сохранена
+  [ OK ] Порты приложения наружу не публикуются
+
+2. HTTP-интерфейс
+  [ OK ] /health -> 200
+  [ OK ] /version -> {"version":"1.0.0-B"}
+  [ OK ] /add?a=2&b=3 -> {"result":5}
+  [ OK ] /add?a=-2&b=1 -> {"result":-1}
+  [ OK ] без параметра b -> 400
+  [ OK ] нечисловой a -> 400
+
+3. HTTPS
+  [ OK ] HTTP перенаправляет на HTTPS (308)
+
+4. Журнал доставок
+  2026-09-29 19:00:32 MSK 1.0.0-A ghcr.io/ppppana/task-02-service@sha256:0c3a7f54cde2d3e8ee8f14bd6ed918a5f15ebe381ab0a9144f7acb82ec8ca5f8
+  2026-09-29 19:13:23 MSK 1.0.0-B ghcr.io/ppppana/task-02-service@sha256:97a365193edf33e1b35e88c25e97b3132200112ff3add076b3a1a0145ed7d966
+  2026-09-29 20:18:36 MSK 1.0.0-A ghcr.io/ppppana/task-02-service@sha256:0c3a7f54cde2d3e8ee8f14bd6ed918a5f15ebe381ab0a9144f7acb82ec8ca5f8
+  2026-09-29 20:28:53 MSK 1.0.0-B ghcr.io/ppppana/task-02-service@sha256:97a365193edf33e1b35e88c25e97b3132200112ff3add076b3a1a0145ed7d966
+
+ИТОГ: все проверки пройдены

@@ -1,0 +1,22 @@
+FAILED tests/test_app.py::test_add_positive - AssertionError: assert {'result': -1} == {'result': 5}
+Differing items:
+{'result': -1} != {'result': 5}
+Full diff:
+{
+- 'result': 5,
+? ^
++ 'result': -1,
+? ^^
+}
+FAILED tests/test_app.py::test_add_negative - AssertionError: assert {'result': -3} == {'result': -1}
+Differing items:
+{'result': -3} != {'result': -1}
+Full diff:
+{
+- 'result': -1,
+? ^
++ 'result': -3,
+? ^
+}
+========================= 2 failed, 4 passed in 0.16s ==========================
+Error: Process completed with exit code 1.
